@@ -1,0 +1,140 @@
+---
+title: "Chap3 Linear Regression"
+author: "Xuewan"
+output:
+  html_document:
+    df_print: paged
+---
+### Import data.
+```{r}
+# import libraries
+library(MASS)
+library(ISLR)
+fix(Boston)
+names(Boston)
+```
+# Simple linear regression.
+```{r message=FALSE, warning=FALSE}
+# We do a simple linear regression.
+# Three ways to deal with data.
+# 1. use \$ to indicate the dataset.
+lm.fit = lm(Boston$medv ~ Boston$lstat)
+# 2. use parameter 'data' to indicate the dataset.
+lm.fit = lm(medv ~ lstat, data = Boston)
+# 3. use function attach() to set Boston as global enviroment.(Risky)
+attach(Boston)
+lm.fit = lm(medv ~ lstat)
+```
+```{r}
+# Show the model results.
+lm.fit          # simple coefficients.
+summary(lm.fit) # Detailed result.
+names(lm.fit)   # See information in lm.fit
+
+# Show the coefficients.
+coef(lm.fit)
+# Show the confidence interval.
+confint(lm.fit)
+# Do prediction with our model.
+predict(lm.fit, data.frame(lstat = c(5, 10, 15)),
+        interval = "confidence")  # 95% condidence interval(about mean)
+predict(lm.fit, data.frame(lstat = c(5, 10, 15)),
+        interval = "confidence")  # 95% prediction interval(sample location)
+```
+
+Use plot to see the model.
+```{r}
+plot(lstat, medv)
+abline(lm.fit)
+abline(lm.fit,lwd=3)          # lwd controls line width
+abline(lm.fit,lwd=3,col="red")# col controls line color
+plot(lstat ,medv ,col="red")
+plot(lstat ,medv ,pch =20)    # pch controls symbols
+plot(lstat ,medv ,pch ="+")
+plot(1:20,1:20,pch=1:20)
+
+# Plot multiple graphs in one time.
+par(mfrow=c(2,2))
+plot(lm.fit)
+par(mfrow=c(1,1))
+plot(predict(lm.fit), residuals (lm.fit))
+plot(predict(lm.fit), rstudent(lm.fit))
+plot(hatvalues (lm.fit))      # h at values
+which.max(hatvalues (lm.fit))
+```
+
+# Multiple linear regression.
+```{r}
+# Use multiple predictors.
+lm.fit = lm(medv ~ lstat + age, data = Boston)
+summary(lm.fit)
+
+# We can directly run regression on all other variables by leaving predictors blank.
+lm.fit = lm(medv ~ ., data=Boston)
+summary(lm.fit)
+summary(lm.fit)$r.sq  # R-squared
+summary(lm.fit)$sigma # return RSE
+
+# We can use '-' to exclude certain factor in predictors.
+lm.fit1=lm(medv~.-age,data=Boston)
+summary(lm.fit1)
+
+# Use update function to update model.
+lm.fit2=update(lm.fit, ~.-age)
+
+# Show Variance Inflation factor.
+library(car)
+vif(lm.fit) # Larger the VIF, higher the collinearity.
+```
+
+# Include interaction Terms.
+```{r}
+# '*' automatically includes single variables and the product.
+summary(lm(medv ~ lstat*age, data = Boston))
+```
+
+# Non-linear transformations of Predictors.
+```{r}
+# I() is used to isolate the operations.
+lm.fit2=lm(medv ~ lstat+I(lstat^2))
+summary(lm.fit2)
+
+lm.fit=lm(medv~lstat)
+anova(lm.fit,lm.fit2)
+
+par(mfrow=c(2,2))
+plot(lm.fit2)
+
+# We automatically use polynomials to 5 order.
+lm.fit5=lm(medv~poly(lstat ,5))
+summary(lm.fit5)
+
+summary(lm(medv~log(rm),data=Boston))
+```
+
+# Qualitative predictors
+Qualitative predictors means values in different levels. Or discrete values.
+```{r}
+# import child car seats sales data.
+fix(Carseats)
+names(Carseats)
+
+# Here ':' means interaction terms.
+lm.fit=lm(Sales~.+Income:Advertising +Price:Age,data=Carseats)
+summary(lm.fit)
+
+# Show the R code for qualitative predictors,
+contrasts(Carseats$ShelveLoc)
+```
+
+# Writing functions.
+
+```{r}
+LoadLibraries= function (){
+library(ISLR)
+library(MASS)
+print("The libraries have been loaded.")
+}
+LoadLibraries
+LoadLibraries()
+```
