@@ -1,0 +1,219 @@
+---
+title: "Chap 7 Non-linear modeling"
+author: "Xuewan"
+output:
+  html_document:
+    df_print: paged
+---
+# Basis functions
+
+### Polynomial Regression and Step Functions
+
+```{r}
+# Import data
+library(ISLR)
+attach(Wage)
+
+fit = lm(wage~poly(age, 4),data=Wage) # 4 indicates the highest order
+coef(summary(fit))
+
+fit2 = lm(wage~poly(age,4,raw=T),data=Wage)
+coef(summary(fit2))
+
+fit2a = lm(wage~age+I(age^2)+I(age^3)+I(age^4),data=Wage)
+coef(fit2a)
+
+fit2b = lm(wage~cbind(age,age^2,age^3,age^4),data=Wage)
+coef(fit2b)
+```
+
+By default, with raw = FALSE, poly() computes an orthogonal polynomial. It internally sets up the model matrix with the raw coding x, x^2, x^3, ... first and then scales the columns so that each column is orthogonal to the previous ones. This does not change the fitted values but has the advantage that you can see whether a certain order in the polynomial significantly improves the regression over the lower orders.
+
+```{r}
+# Prediction on grid of age.
+agelims = range(age)
+age.grid = seq(from=agelims[1],to=agelims[2])
+preds=predict(fit,newdata=list(age=age.grid),se=TRUE) # se is standard error.
+se.bands = cbind(preds$fit + 2*preds$se.fit, preds$fit-2*preds$se.fit)
+
+par(mfrow=c(1,1),mar=c(4.5,4.5,1,1),oma=c(0,0,4,0))
+# mfrow is (# of row, # of columns), mar is margin, oma is outer margin
+plot(age, wage, xlim = agelims, cex=.5, col="darkgrey") # cex is the scale of text and symbols
+title("Degree-4 Polynomials", outer = T)
+lines(age.grid, preds$fit, lwd=2, col="blue")
+matlines(age.grid, se.bands, lwd=1, col="blue", lty=3) # lty: line type
+
+preds2 = predict(fit2, newdata = list(age=age.grid),se=TRUE)
+max(abs(preds$fit - preds2$fit))
+```
+
+#### Optimal order selection
+
+```{r}
+fit.1 = lm(wage~age, data=Wage)
+fit.2 = lm(wage~poly(age,2), data=Wage)
+fit.3 = lm(wage~poly(age,3), data=Wage)
+fit.4 = lm(wage~poly(age,4), data=Wage)
+fit.5 = lm(wage~poly(age,5), data=Wage)
+
+anova(fit.1, fit.2, fit.3, fit.4, fit.5)
+
+summary(fit.5) # more clean and clear, compared to anova.
+```
+
+Here, anova() is used to do the analysis of variance, using F-test. 
+In fact the square of the t-statistics are equal to the F-statistics from the anova() function.
+
+##### Use cross-validation to determin optimal order.
+```{r}
+fit = glm(I(wage>250)~poly(age,4),data=Wage,family=binomial)
+preds = predict(fit, newdata=list(age=age.grid),se=T)
+
+# We transform the prediction from logis to probabilities.
+pfit = exp(preds$fit)/(1+exp(preds$fit))
+se.bands.logit = cbind(preds$fit+2*preds$se.fit, preds$fit-2*preds$se.fit)
+se.bands = exp(se.bands.logit)/(1+exp(se.bands.logit))
+
+plot(age,I(wage>250),xlim=agelims,type="n",ylim=c(0,0.2))
+# type = n indictes this plot shall be blank.
+points(jitter(age),I((wage>250)/5),cex=0.5,pch="|",col="darkgrey") # jitter is used to add small noise to vector.
+lines(age.grid,pfit,lwd=2,col="blue")
+matlines(age.grid,se.bands,lwd=1,col="blue",lty=3)
+```
+
+### Step function
+
+```{r}
+table(cut(age,4))
+fit=lm(wage~cut(age,4),date=Wage)
+coef(summary(fit))
+```
+
+# Splines
+
+### Cubic splines
+```{r}
+library(splines)
+fit=lm(wage~bs(age,knots=c(25,40,60)),data=Wage) # bs defaultly produces cubic splines
+pred=predict(fit,newdata = list(age=age.grid),se=T)
+plot(age,wage,col="gray")
+lines(age.grid,pred$fit,lwd=2)
+lines(age.grid,pred$fit+2*pred$se,lty="dashed")
+lines(age.grid,pred$fit-2*pred$se,lty="dashed")
+
+# We can also set the degree of freedom at start.
+dim(bs(age,knots = c(25, 40, 60))) # df-1 (intercept)
+dim(bs(age,df=6)) # uniformly distributed knots.
+attr(bs(age,df=6),"knots")
+```
+
+### natural splines
+I.e. cubic spline, where second order derivative at knots = 0
+
+```{r}
+fit2=lm(wage~ns(age,df=4),data=Wage)
+pred2=predict(fit2,newdata = list(age=age.grid),se=T)
+plot(age,wage,col="gray")
+lines(age.grid,pred2$fit,col="red",lwd=2)
+```
+
+### smooth spline
+
+```{r}
+plot(age,wage,xlim = agelims,cex=0.5,col="darkgrey")
+title("Smoothing Splines")
+fit=smooth.spline(age,wage,df=16)
+fit2=smooth.spline(age,wage,cv=TRUE)
+fit2$df
+
+plot(age,wage,col="gray")
+lines(fit,col="red",lwd=2)
+lines(fit2,col="blue",lwd=2)
+legend("topright",legend=c("16 DF",paste(toString(round(fit2$df,1)),"DF",sep = " ")),
+       col=c("red","blue"),lty=1,lwd=2,cex=0.8)
+```
+
+### local regression
+```{r}
+plot(age,wage,xlim=agelims,cex=0.5,col="darkgrey")
+title("Local Regression")
+fit=loess(wage~age,span = 0.2, data=Wage) # Span means how many percentage observations are included as neighbor
+fit2=loess(wage~age,span = 0.5, data=Wage)
+lines(age.grid,predict(fit,data.frame(age=age.grid)),
+      col="red",lwd=2)
+lines(age.grid,predict(fit2,data.frame(age=age.grid)),
+      col="blue",lwd=2)
+legend("topright",legend=c("Span=0.2","Span=0.5"),
+       col=c("red","blue"),lty = 1,lwd=2,cex=0.8)
+```
+
+# Generalized Additive Model
+```{r}
+gam1=lm(wage~ns(year,4)+ns(age,5)+education,data=Wage)
+
+# We use library to do GAM
+library(gam)
+gam.m3 = gam(wage~s(year,4)+s(age,5)+education,data=Wage)
+# s() here indicated smoothing splines.
+
+par(mfrow=c(1,3))
+plot(gam.m3,se=T,col="blue")
+plot.Gam(gam1,se=T,col="red")
+```
+
+Now we use anova() to determine which model is optimal.
+
+```{r}
+gam.m1=gam(wage~s(age,5)+education,data=Wage)
+gam.m2=gam(wage~year+s(age,5)+education,data=Wage)
+
+anova(gam.m1, gam.m2, gam.m3, test="F")
+
+summary(gam.m3)
+```
+
+Do prediction on GAM.
+
+```{r}
+preds=predict(gam.m2,newdata = Wage)
+gam.lo = gam(wage~s(year,df=4)+lo(age,span=0.7)+education,data=Wage)
+plot.Gam(gam.lo, se=T, col="green")
+gam.lo.i=gam(wage~lo(year,age,span=0.5)+education,data=Wage)
+
+library(akima)
+plot(gam.lo.i) # plot the surface constructed by year and age
+
+# Logistic gam
+gam.lr=gam(I(wage>250)~year+s(age,df=5)+education,
+           family=binomial, data=Wage)
+par(mfrow=c(1,3))
+plot(gam.lr, se=T, col="green")
+
+table(education, I(wage>250))
+
+# Re-do the regression excluding records under High school level
+gam.lr.s=gam(I(wage>250)~year+s(age,df=5)+education,
+             family = binomial, data = Wage,subset=(education!="1. < HS Grad"))
+plot(gam.lr.s,se=T,col="green")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

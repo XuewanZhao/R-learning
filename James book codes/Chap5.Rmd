@@ -1,0 +1,119 @@
+---
+title: "Chap 5 Resampling"
+author: "Xuewan"
+output:
+  html_document:
+    df_print: paged
+---
+# Cross-Validation.
+
+## 1. The validation set approach.
+```{r}
+library(ISLR)
+set.seed(1)
+train = sample(392,196)
+attach(Auto)
+lm.fit=lm(mpg~horsepower ,data=Auto,subset=train)
+mean(((mpg - predict(lm.fit,Auto))[-train])^2)
+
+lm.fit2=lm(mpg~poly(horsepower ,2),data=Auto, subset=train)
+mean((mpg-predict(lm.fit2,Auto ))[- train]^2)
+
+lm.fit3=lm(mpg~poly(horsepower ,3),data=Auto, subset=train)
+mean((mpg-predict(lm.fit3,Auto ))[- train]^2)
+
+set.seed(2)
+train=sample(392,196)
+lm.fit=lm(mpg~horsepower ,subset=train)
+
+mean((mpg-predict(lm.fit,Auto))[-train]^2)
+lm.fit2=lm(mpg~poly(horsepower ,2),data=Auto, subset=train)
+lm.fit3=lm(mpg~poly(horsepower ,3),data=Auto, subset=train)
+
+glm.fit=glm(mpg~horsepower ,data=Auto)
+coef(glm.fit)
+
+lm.fit=lm(mpg~horsepower ,data=Auto)
+coef(lm.fit)
+
+library(boot)
+glm.fit=glm(mpg~horsepower ,data=Auto)
+cv.err=cv.glm(Auto ,glm.fit)
+cv.err$delta
+# ﬁrst is the standard k-fold CV estimate, as in (5.3)
+# The second is a bias-corrected version
+
+cv.error=rep(0,5)
+for (i in 1:5){
+glm.fit=glm(mpg~poly(horsepower ,i),data=Auto)
+cv.error[i]=cv.glm(Auto,glm.fit)$delta[1]
+}
+cv.error
+```
+
+## 2. K-Fold Cross-Validation.
+```{r}
+set.seed(17)
+cv.error.10=rep(0 ,10)
+for (i in 1:10){
+glm.fit=glm(mpg~poly(horsepower ,i),data=Auto)
+cv.error.10[i]=cv.glm(Auto,glm.fit,K=10)$delta[1]
+}
+# There is 10 fold for each index
+# Index means the order of polynomial
+cv.error.10
+```
+
+# Bootstrap
+## Estimate accuracy for a statistic
+```{r}
+# This function aims to find alpha which minimizes 
+# the variance of portfolio formed by X and Y
+# which is alpha*X + (1-alpha)*Y
+alpha.fn=function(data,index){
+X=data$X[index]
+Y=data$Y[index]
+return((var(Y)-cov(X,Y))/(var(X)+var(Y)-2*cov(X,Y)))
+}
+
+# Portfolio has two assets, X and Y
+# Data is simulated log return.
+alpha.fn(Portfolio ,1:100)
+
+# Random select with replacement.
+set.seed(1)
+alpha.fn(Portfolio ,sample(100,100, replace=T))
+
+# Do bootstrap for 1000 times
+boot(Portfolio ,alpha.fn,R=1000)
+```
+
+## Estimate the accuracy for a linear regression model
+
+```{r}
+boot.fn=function(data,index){
+return(coef(lm(mpg~horsepower ,data=data, subset=index)))
+}
+boot.fn(Auto ,1:392)
+
+# Random select with replacement.
+set.seed(1)
+boot.fn(Auto,sample(392,392, replace=T))
+boot.fn(Auto,sample(392,392, replace=T))
+
+# Do bootstrap for 1000 times.
+boot(Auto,boot.fn,1000)
+summary(lm(mpg~horsepower ,data=Auto))$coef
+
+# We add a second order term and redo the bootstrap
+boot.fn=function(data,index){
+coefficients(lm(mpg~horsepower +I(horsepower ^2),data=data,
+subset=index))
+}
+set.seed(1)
+boot(Auto,boot.fn,1000)
+
+summary(lm(mpg~horsepower +I(horsepower ^2),data=Auto))$coef
+```
+
+

@@ -1,0 +1,286 @@
+---
+title: "Chap 6 Linear model selection and regularization"
+author: "Xuewan"
+output:
+  html_document:
+    df_print: paged
+---
+#   Subset selection
+### Best subset selection
+
+```{r}
+library(ISLR)
+fix(Hitters)
+names(Hitters)
+dim(Hitters)
+# Count the missing rows in salary.
+sum(is.na(Hitters$Salary))
+
+# Remove the rows with missing data anywhere.
+Hitters.noNA = na.omit(Hitters)
+dim(Hitters.noNA)
+sum(is.na(Hitters.noNA$Salary))
+
+# Do best subset selection with regsubsets()
+library(leaps)
+regfit.full = regsubsets(Salary~. , data = Hitters.noNA)
+summary(regfit.full)
+```
+
+'*' means the selected variable.
+```{r}
+# We can use nvmax to control # of variables desired.
+regfit.full = regsubsets(Salary~., data = Hitters.noNA, nvmax = 19)
+reg.summary = summary(regfit.full)
+
+names(reg.summary)
+reg.summary$rsq
+
+par(mfrow = c(2,2))
+plot(reg.summary$rss,xlab = "# of variables", ylab = "RSS", type = "l")
+x = which.min(reg.summary$rss)
+points(x,reg.summary$rss[x],col="red",cex = 2, pch=20)
+
+plot(reg.summary$adjr2,xlab = "# of variables", ylab = "Adj R2", type = "l")
+# Find out which model reaches max adj r2.
+x = which.max(reg.summary$adjr2)
+points(x,reg.summary$adjr2[x],col="red",cex=2,pch=20)
+
+plot(reg.summary$cp,xlab = "# of variables", ylab = "Cp", type = "l")
+x = which.min(reg.summary$cp)
+points(x,reg.summary$cp[x],col="red",cex = 2, pch=20)
+
+plot(reg.summary$bic,xlab = "# of variables", ylab = "BIC", type = "l")
+x = which.min(reg.summary$bic)
+points(x,reg.summary$bic[x],col="red",cex = 2,pch=20)
+
+par(mfrow = c(2,2))
+plot(regfit.full,scale = "r2")
+plot(regfit.full,scale = "adjr2")
+plot(regfit.full,scale = "Cp")
+plot(regfit.full,scale = "bic")
+
+coef(regfit.full,6)
+```
+
+### Forward and backward Stepwise Selection
+
+```{r}
+# regsubset() is still available, we just need to set some parameters.
+regfit.fwd = regsubsets(Salary~., data = Hitters.noNA, nvmax = 19, method = "forward")
+summary(regfit.fwd)
+regfit.bwd = regsubsets(Salary~., data = Hitters.noNA, nvmax = 19, method = "backward")
+summary(regfit.bwd)
+
+# Check if different methods generates same subset.
+coef(regfit.full,7)
+cat("\n")
+coef(regfit.fwd, 7)
+cat("\n")
+coef(regfit.bwd, 7)
+
+```
+
+### Do subset selection by validation.
+
+##### Manually validation.
+```{r}
+set.seed(1)
+train=sample(c(TRUE,FALSE), nrow(Hitters.noNA),rep= TRUE)
+test=(!train)
+
+regfit.best = regsubsets(Salary~., data = Hitters.noNA[train,], nvmax=19)
+
+test.mat = model.matrix(Salary~., data = Hitters.noNA[test,])
+
+val.errors = rep(NA,19)
+for(i in 1:19){
+  coefi = coef(regfit.best, id = i)
+  pred = test.mat[, names(coefi)]%*%coefi
+  val.errors[i] = mean((Hitters.noNA$Salary[test]-pred)^2)
+}
+
+val.errors
+x = which.min(val.errors)
+coef(regfit.best,x) # on train set
+
+# Write our own prediction function for further use.
+predict.regsubsets = function(object, newdata,id,...){
+  form = as.formula(object$call[[2]])
+  mat = model.matrix(form, data = newdata)
+  coefi = coef(object, id=id)
+  xvars = names(coefi)
+  mat[,xvars]%*%coefi
+}
+
+# By now, we have determined the number of variables which minimizes the test MSE by validation. Now we perform regression on the whole dataset.
+regfit.best = regsubsets(Salary~., data = Hitters.noNA, nvmax = 19)
+coef(regfit.best, x)
+```
+
+##### Cross-validation.
+```{r}
+k = 10 # number of folders
+set.seed(1)
+folds = sample(1:k, nrow(Hitters.noNA),replace = TRUE)
+cv.errors = matrix(NA, k, 19, dimnames = list(NULL, paste(1:19)))
+
+# row i, columns j means, here stores the MSE, in which folder i is used as test set, j is the number of variables used.
+for(j in 1:k){
+  best.fit = regsubsets(Salary~., data = Hitters.noNA[folds!=j,], nvmax = 19)
+  for(i in 1:19){
+    pred = predict(best.fit, Hitters.noNA[folds==j,],id=i)
+    cv.errors[j, i] = mean((Hitters.noNA$Salary[folds==j]-pred)^2) 
+  }
+}
+
+mean.cv.errors = apply(cv.errors,2,mean) # 2 here means over columns, i.e., average the value in one column
+par(mfrow = c(1,1))
+plot(mean.cv.errors,type = "b")
+
+x = which.min(mean.cv.errors)
+reg.best = regsubsets(Salary~., data = Hitters.noNA, nvmax = 19)
+coef(reg.best, x)
+```
+
+# Ridge and Lasso.
+
+```{r}
+# To conduct Ridge and Lasso, we need to transform our data into matrix forms.
+X = model.matrix(Salary~., data = Hitters.noNA)[,-1]
+Y = Hitters.noNA$Salary
+```
+
+### Ridge
+```{r}
+library(glmnet)
+grid = 10^seq(10, -2, length = 100)
+# alpha = 0 means we use ridge, alpha = 1 means we use lasso
+ridge.mod = glmnet(X,Y,alpha=0, lambda = grid)
+
+dim(coef(ridge.mod)) # number of coefficients, number of lambdas
+
+ridge.mod$lambda[50]
+
+coef(ridge.mod)[,50]
+
+# calculate l2 norm of coefficiens with lambda[50]
+sqrt(sum(coef(ridge.mod)[-1,50]^2))
+
+# predict the value of coefficients with lambda=50. Exactly, panelty parameter.
+predict(ridge.mod, s = 50, type="coefficients")[1:20,]
+```
+
+We do validation to compare Ridge and Lasso.
+
+```{r}
+set.seed(1)
+train = sample(1:nrow(X),nrow(X)/2)
+test = (-train)
+Y.test = Y[test]
+
+ridge.mod = glmnet(X[train,],Y[train],alpha = 0,lambda = grid, thresh = 1e-12)
+ridge.pred = predict(ridge.mod,s=4,newx = X[test,])
+mean((ridge.pred - Y.test)^2)
+
+# Intercept only prediction
+mean((mean(Y[train])-Y.test)^2)
+# Force coefficients to be zero
+ridge.pred = predict(ridge.mod, s = 1e10, newx=X[test,])
+mean((ridge.pred-Y.test)^2)
+
+# If alpha = 0, then we get least squared results.
+```
+
+Cross validation used.
+
+```{r}
+set.seed(1)
+cv.out = cv.glmnet(X[train,],Y[train],alpha = 0, nfolds = 10)
+plot(cv.out)
+bestilam = cv.out$lambda.min
+bestilam
+
+# MSE with best estimate lambda
+ridge.pred = predict(ridge.mod, s = bestilam, newx = X[test,])
+mean((ridge.pred - Y.test)^2)
+
+out=glmnet(X,Y,alpha=0)
+predict(out,type="coefficients",s= bestilam)[1:20,]
+```
+
+### Lasso
+
+```{r}
+lasso.mod = glmnet(X[train,],Y[train], alpha=1, lambda=grid)
+plot(lasso.mod)
+```
+
+Cross validation.
+```{r}
+set.seed(1)
+cv.out = cv.glmnet(X[train,],Y[train],alpha=1)
+plot(cv.out)
+bestilam = cv.out$lambda.min
+lasso.pred = predict(lasso.mod, s=bestilam, newx = X[test,])
+mean((lasso.pred-Y.test)^2)
+
+# show variable selection.
+out = glmnet(X,Y,alpha=1,lambda=grid)
+lasso.coef = predict(out,type="coefficients",s=bestilam)[1:20,]
+lasso.coef
+lasso.coef[lasso.coef!=0]
+```
+
+# PCR and PLS
+### Principle components regression
+```{r}
+# we use pcr() to do PCR
+library(pls)
+set.seed(2)
+pcr.fit = pcr(Salary~.,data=Hitters.noNA,scale=TRUE,validation="CV")
+summary(pcr.fit)
+
+validationplot(pcr.fit,val.type="MSEP")
+
+set.seed(1)
+pcr.fit=pcr(Salary~., data=Hitters , subset=train ,scale=TRUE,
+validation ="CV")
+validationplot(pcr.fit,val.type="MSEP")
+
+pcr.pred=predict(pcr.fit,X[test,],ncomp=7)
+mean((pcr.pred-Y.test)^2)
+
+pcr.fit=pcr(Y~X,scale=TRUE,ncomp=7)
+
+```
+
+### Partial least squares
+```{r}
+# We use plsr() to achieve PLS.
+set.seed(1)
+pls.fit=plsr(Salary~.,data=Hitters,subset=train,scale=TRUE,validation ="CV")
+summary(pls.fit)
+validationplot(pls.fit,val.type="MSEP")
+
+pls.pred=predict(pls.fit,X[test,],ncomp=2)
+mean((pls.pred-Y.test)^2)
+
+pls.fit=plsr(Salary~., data=Hitters , scale=TRUE, ncomp=2)
+summary(pls.fit)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
